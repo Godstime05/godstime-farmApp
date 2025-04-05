@@ -89,7 +89,7 @@ public class CartService {
         return cartRepository.save(cart);
     }
 
-    private void updateCartTotal(Cart cart) {
+    public void updateCartTotal(Cart cart) {
         BigDecimal total = cart.getCartItems().stream()
                 .map(CartItem::getPrice)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
