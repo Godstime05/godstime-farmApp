@@ -1,17 +1,23 @@
 package com.godstime.ecommerce.farmsApp.services;
 
-import com.godstime.ecommerce.farmsApp.dto.OrderRequest;
-import com.godstime.ecommerce.farmsApp.model.*;
-import com.godstime.ecommerce.farmsApp.repository.OrderRepository;
-import com.godstime.ecommerce.farmsApp.repository.ProductRepository;
+import java.math.BigDecimal;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.util.List;
+import com.godstime.ecommerce.farmsApp.dto.OrderRequest;
+import com.godstime.ecommerce.farmsApp.model.Cart;
+import com.godstime.ecommerce.farmsApp.model.CartItem;
+import com.godstime.ecommerce.farmsApp.model.Order;
+import com.godstime.ecommerce.farmsApp.model.OrderItem;
+import com.godstime.ecommerce.farmsApp.model.Product;
+import com.godstime.ecommerce.farmsApp.model.User;
+import com.godstime.ecommerce.farmsApp.repository.OrderRepository;
+import com.godstime.ecommerce.farmsApp.repository.ProductRepository;
 
 @Service
 public class OrderService {
@@ -25,6 +31,9 @@ public class OrderService {
     @Autowired
     private ProductRepository productRepository;
 
+    @Autowired
+    private EmailService emailService;
+
     @Transactional
     public Order createOrder(OrderRequest request) {
         Cart cart = cartService.getCart();
@@ -33,7 +42,8 @@ public class OrderService {
         }
 
         Order order = new Order();
-        order.setUser((User) SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+        User user = (User) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        order.setUser(user);
         order.setShippingAddress(request.getShippingAddress());
         order.setPaymentMethod(request.getPaymentMethod());
         order.setTotalPrice(cart.getTotalPrice());
@@ -58,7 +68,17 @@ public class OrderService {
         cart.setTotalPrice(BigDecimal.ZERO);
         cartService.updateCartTotal(cart);
 
-        return orderRepository.save(order);
+        Order savedOrder = orderRepository.save(order);
+
+        // Send order confirmation email
+        emailService.sendOrderConfirmationEmail(
+            user.getEmail(),
+            savedOrder.getId().toString(),
+            user.getUsername(),
+            savedOrder.getTotalPrice().doubleValue()
+        );
+
+        return savedOrder;
     }
 
     public List<Order> getUserOrders() {
@@ -75,7 +95,16 @@ public class OrderService {
     public Order updateOrderStatus(Long id, String status) {
         Order order = getOrderById(id);
         order.setStatus(status);
-        return orderRepository.save(order);
+        Order updatedOrder = orderRepository.save(order);
+
+        // Send order status update email
+        emailService.sendOrderStatusUpdateEmail(
+            order.getUser().getEmail(),
+            order.getId().toString(),
+            status
+        );
+
+        return updatedOrder;
     }
 
     public List<Order> getOrdersByStatus(String status) {
