@@ -6,13 +6,15 @@ import java.time.LocalDateTime;
 @Data
 public class ReviewDTO {
     private Long id;
-    private Long productId;
     private Long userId;
-    private String username;
+    private String userName;
+    private Long productId;
+    private String productName;
     private Integer rating;
     private String comment;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Boolean verifiedPurchase;
 }
 
 @Data

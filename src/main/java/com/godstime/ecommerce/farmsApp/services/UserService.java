@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -28,20 +29,27 @@ public class UserService {
     }
 
     public Request registerUser(Request request) {
-
         Request response = new Request();
         try {   
-
             User user = new User();
             user.setEmail(request.getEmail());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
-            user.setRole(request.getRole());
+            // Set default role as USER if not specified
+            user.setRole(request.getRole() != null ? request.getRole() : "USER");
             user.setPhoneNumber(request.getPhoneNumber());
             user.setUsername(request.getUsername());
 
+            // Validate that role is either USER or ADMIN
+            if (user.getRole() != null && !user.getRole().equals("USER") && !user.getRole().equals("ADMIN")) {
+                response.setStatusCode(400);
+                response.setError("Invalid role");
+                response.setMessage("Role must be either USER or ADMIN");
+                return response;
+            }
+
             User savedUser = userRepository.save(user);
 
-            if (savedUser.getId()>0) {
+            if (savedUser.getId() > 0) {
                 response.setStatusCode(200);                
                 response.setMessage("User registered successfully");
                 response.setUser(savedUser);
@@ -51,31 +59,65 @@ public class UserService {
             response.setStatusCode(500);
             response.setError("Internal Server Error");
             response.setMessage(e.getMessage());
-           
         }
         return response;
     }
 
-    public Request loginUser (Request request) {
+    public Request loginUser(Request request) {
         Request response = new Request();
         try {
-            authenticationManager
-                .authenticate(new UsernamePasswordAuthenticationToken(
-                    request.getEmail(), request.getPassword()));
-             var user = userRepository.findByEmail(request.getEmail()).orElseThrow();
-             var token = jwtUtils.generateToken(user);
-             var refreshToken = jwtUtils.generateRefreshToken(new HashMap<>(), user);
-             //response.setUser(user);
-             response.setToken(token);
-             response.setRefreshToken(refreshToken);
-             response.setStatusCode(200);
-             response.setRole(user.getRole());
-             response.setExpirationTime("24 Hours");
-             response.setMessage("User logged in successfully");
+            // Check if user exists first
+            var userOptional = userRepository.findByEmail(request.getEmail());
+            if (userOptional.isEmpty()) {
+                System.out.println("Login failed: User not found with email: " + request.getEmail());
+                response.setStatusCode(401);
+                response.setError("Authentication Failed");
+                response.setMessage("Invalid email or password");
+                return response;
+            }
+
+            var user = userOptional.get();
+            
+            // First try to authenticate with Spring Security
+            try {
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                    request.getEmail(), 
+                    request.getPassword()
+                );
+                var authentication = authenticationManager.authenticate(authToken);
+                if (!authentication.isAuthenticated()) {
+                    System.out.println("Login failed: Authentication failed for user: " + request.getEmail());
+                    response.setStatusCode(401);
+                    response.setError("Authentication Failed");
+                    response.setMessage("Invalid email or password");
+                    return response;
+                }
+            } catch (Exception e) {
+                System.out.println("Login failed: Authentication exception for user: " + request.getEmail() + ", Error: " + e.getMessage());
+                response.setStatusCode(401);
+                response.setError("Authentication Failed");
+                response.setMessage("Invalid email or password");
+                return response;
+            }
+
+            // If we get here, authentication was successful
+            System.out.println("Login successful for user: " + request.getEmail());
+            var token = jwtUtils.generateToken(user);
+            var refreshToken = jwtUtils.generateRefreshToken(new HashMap<>(), user);
+            
+            response.setToken(token);
+            response.setRefreshToken(refreshToken);
+            response.setStatusCode(200);
+            response.setRole(user.getRole());
+            response.setExpirationTime("24 Hours");
+            response.setMessage("User logged in successfully");
+            response.setUser(user);
              
         } catch (Exception e) {
+            System.out.println("Login error: Unexpected exception: " + e.getMessage());
             response.setStatusCode(500);
-            response.setMessage(e.getMessage());
+            response.setError("Internal Server Error");
+            response.setMessage("An unexpected error occurred");
         }
         return response;
     }
@@ -277,13 +319,13 @@ public class UserService {
 
     public Request updateUserByUsername(String username, Request request) {
         Request response = new Request();
-        try {
+        try {   
             User user = userRepository.findByUsername(username).orElseThrow();
             user.setEmail(request.getEmail());
             user.setPassword(passwordEncoder.encode(request.getPassword()));
             user.setRole(request.getRole());
             user.setPhoneNumber(request.getPhoneNumber());
-            user.setUsername(request.getUsername());
+            user.setUsername(request.getUsername());    
             userRepository.save(user);
             response.setStatusCode(200);
             response.setMessage("User updated successfully");
@@ -292,5 +334,12 @@ public class UserService {
             response.setMessage(e.getMessage());
         }
         return response;    
+    }
+
+    public User getCurrentUser() {
+        // Get the current authenticated user from SecurityContext
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
     }
 }
