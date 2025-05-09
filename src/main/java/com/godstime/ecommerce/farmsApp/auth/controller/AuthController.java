@@ -39,9 +39,6 @@ public class AuthController {
     public ResponseEntity<Request> getUserById(@PathVariable Long id) {
         return ResponseEntity.ok(userService.getUserById(id));
     }
-
-  
-
     @PutMapping("/admin/update-users/{id}")
     public ResponseEntity<Request> updateUser(@PathVariable Long id, @RequestBody Request updateUserRequest) {
         return ResponseEntity.ok(userService.updateUser(id, updateUserRequest));
